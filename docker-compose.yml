@@ -1,0 +1,55 @@
+# CookMyMemories の開発環境
+# 使い方: プロジェクトのルートで `docker compose up --build`
+#   フロントエンド : http://localhost:5500
+#   バックエンドAPI: http://localhost:8080
+#   MySQL          : localhost:3307（ホストのMySQLと衝突しないよう3307番）
+
+services:
+  db:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-cookmymemories}
+      MYSQL_DATABASE: recipe_management
+      TZ: Asia/Tokyo
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    ports:
+      - "3307:3306"
+    volumes:
+      - db-data:/var/lib/mysql
+      # 文字コード設定（これがないと初期データの日本語が文字化けする）
+      - ./docker/mysql/charset.cnf:/etc/mysql/conf.d/charset.cnf:ro
+      # 初回起動時だけ、ファイル名の番号順にSQLが実行されます
+      - ./sql/mysql/Cmm.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+      - ./sql/mysql/H_ingredients.sql:/docker-entrypoint-initdb.d/02_H_ingredients.sql:ro
+      - ./sql/mysql/H_recipes.sql:/docker-entrypoint-initdb.d/03_H_recipes.sql:ro
+      - ./sql/mysql/V_ing.sql:/docker-entrypoint-initdb.d/04_V_ing.sql:ro
+      - ./sql/mysql/H_ri.sql:/docker-entrypoint-initdb.d/05_H_ri.sql:ro
+      - ./sql/mysql/H_is.sql:/docker-entrypoint-initdb.d/06_H_is.sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p${DB_PASSWORD:-cookmymemories}"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  backend:
+    build: ./backend
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: jdbc:mysql://db:3306/recipe_management?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true&characterEncoding=UTF-8
+      DB_USER: root
+      DB_PASSWORD: ${DB_PASSWORD:-cookmymemories}
+      JWT_SECRET: ${JWT_SECRET:-local-dev-only-secret-change-me-0123456789}
+    ports:
+      - "8080:8080"
+
+  frontend:
+    image: nginx:alpine
+    volumes:
+      - ./frontend:/usr/share/nginx/html:ro
+    ports:
+      - "5500:80"
+
+volumes:
+  db-data:
